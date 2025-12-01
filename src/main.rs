@@ -11,9 +11,12 @@ use fat32_impl::println;
 pub extern "C" fn _start() -> ! {
     println!("Hello World{}", "!");
 
+    fat32_impl::init();
+
     #[cfg(test)]
     test_main();
-    
+
+    println!("Did not crash!");
     loop {}
 }
 
