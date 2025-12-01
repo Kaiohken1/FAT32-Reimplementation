@@ -9,22 +9,16 @@ use fat32_impl::println;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
-    println!("Hello World{}", "!");
-
-    #[cfg(test)]
     test_main();
-    
+
     loop {}
 }
 
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    println!("{}", info);
-    loop {}
+#[test_case]
+fn test_prinln() {
+    println!("test_println output")
 }
 
-#[cfg(test)]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     fat32_impl::test_panic_handler(info)
