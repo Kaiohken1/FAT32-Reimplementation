@@ -2,7 +2,7 @@
 #![no_main]
 
 use core::panic::PanicInfo;
-use fat32_impl::{QemuExitCode, exit_qemu, serial_println, serial_print};
+use fat32_impl::{QemuExitCode, exit_qemu, serial_print, serial_println};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {

@@ -4,9 +4,9 @@
 
 use core::panic::PanicInfo;
 use fat32_impl::serial_print;
+use fat32_impl::{QemuExitCode, exit_qemu, serial_println};
 use lazy_static::lazy_static;
 use x86_64::structures::idt::InterruptDescriptorTable;
-use fat32_impl::{exit_qemu, QemuExitCode, serial_println};
 use x86_64::structures::idt::InterruptStackFrame;
 
 #[unsafe(no_mangle)]

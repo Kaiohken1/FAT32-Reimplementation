@@ -4,16 +4,16 @@
 #![test_runner(crate::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 #![feature(abi_x86_interrupt)]
+pub mod gdt;
+pub mod interrupts;
+pub mod memory;
 pub mod serial;
 pub mod vga_buffer;
-pub mod interrupts;
-pub mod gdt;
-pub mod memory;
 
 use core::panic::PanicInfo;
 
 #[cfg(test)]
-use bootloader::{entry_point, BootInfo};
+use bootloader::{BootInfo, entry_point};
 
 #[cfg(test)]
 entry_point!(test_kernel_main);
@@ -86,7 +86,7 @@ fn panic(info: &PanicInfo) -> ! {
 #[repr(u32)]
 pub enum QemuExitCode {
     Success = 0x10,
-    Failed = 0x11
+    Failed = 0x11,
 }
 
 pub fn exit_qemu(exit_code: QemuExitCode) {
