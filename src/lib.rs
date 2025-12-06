@@ -5,6 +5,7 @@
 #![reexport_test_harness_main = "test_main"]
 #![feature(abi_x86_interrupt)]
 pub mod allocator;
+pub mod disk;
 pub mod gdt;
 pub mod interrupts;
 pub mod memory;

@@ -1,12 +1,12 @@
-use super::align_up;
-use core::mem;
 use super::Locked;
+use super::align_up;
 use alloc::alloc::{GlobalAlloc, Layout};
+use core::mem;
 use core::ptr;
 
 struct ListNode {
     size: usize,
-    next: Option<&'static mut ListNode>
+    next: Option<&'static mut ListNode>,
 }
 
 impl ListNode {
@@ -29,13 +29,13 @@ pub struct LinkedListAllocator {
 
 impl LinkedListAllocator {
     pub const fn new() -> Self {
-        LinkedListAllocator { head: ListNode::new(0) }
+        LinkedListAllocator {
+            head: ListNode::new(0),
+        }
     }
 
     pub unsafe fn init(&mut self, heap_start: usize, heap_size: usize) {
-        unsafe {
-            self.add_free_region(heap_start, heap_size)
-        }
+        unsafe { self.add_free_region(heap_start, heap_size) }
     }
 
     unsafe fn add_free_region(&mut self, addr: usize, size: usize) {
@@ -51,9 +51,7 @@ impl LinkedListAllocator {
         }
     }
 
-       fn find_region(&mut self, size: usize, align: usize)
-        -> Option<(&'static mut ListNode, usize)>
-    {
+    fn find_region(&mut self, size: usize, align: usize) -> Option<(&'static mut ListNode, usize)> {
         let mut current = &mut self.head;
         while let Some(ref mut region) = current.next {
             if let Ok(alloc_start) = Self::alloc_from_region(&region, size, align) {
@@ -69,9 +67,7 @@ impl LinkedListAllocator {
         None
     }
 
-    fn alloc_from_region(region: &ListNode, size: usize, align: usize)
-        -> Result<usize, ()>
-    {
+    fn alloc_from_region(region: &ListNode, size: usize, align: usize) -> Result<usize, ()> {
         let alloc_start = align_up(region.start_addr(), align);
         let alloc_end = alloc_start.checked_add(size).ok_or(())?;
 
