@@ -17,18 +17,18 @@ const DISK_IMAGE: &[u8] = include_bytes!("../fat32.img");
 #[test_case]
 fn init() {
     let fs = Fat32FileSystem::new(DISK_IMAGE);
-    // let root_data = fs.read_cluster(fs.root_cluster);
-    // assert_ne!(0, fs.data_sector);
-    // assert_ne!(0, fs.fat_sector);
-    // assert!(fs.root_cluster >= 2);
-    // assert_ne!(0, root_data.len());
+    let root_data = fs.read_cluster(fs.root_cluster);
+    assert_ne!(0, fs.data_sector);
+    assert_ne!(0, fs.fat_sector);
+    assert!(fs.root_cluster >= 2);
+    assert_ne!(0, root_data.len());
 
-    // let expected_size = (fs.sectors_per_cluster * fs.bytes_per_sector) as usize;
-    // assert_eq!(
-    //     expected_size,
-    //     root_data.len(),
-    //     "La taille de la racine lue est incorrecte."
-    // );
+    let expected_size = (fs.sectors_per_cluster * fs.bytes_per_sector) as usize;
+    assert_eq!(
+        expected_size,
+        root_data.len(),
+        "La taille de la racine lue est incorrecte."
+    );
 }
 
 fn main(boot_info: &'static BootInfo) -> ! {
