@@ -1,4 +1,6 @@
 pub mod bump;
+pub mod linked_list;
+pub mod fixed_size_block;
 
 use x86_64::{
     VirtAddr,
@@ -6,8 +8,10 @@ use x86_64::{
         FrameAllocator, Mapper, Page, PageTableFlags, Size4KiB, mapper::MapToError,
     },
 };
-use linked_list_allocator::LockedHeap;
-use bump::BumpAllocator;
+// use linked_list_allocator::LockedHeap;
+// use bump::BumpAllocator;
+// use linked_list::LinkedListAllocator;
+use fixed_size_block::FixedSizeBlockAllocator;
 
 
 pub const HEAP_START: usize = 0x_4444_4444_0000;
@@ -33,7 +37,7 @@ impl<A> Locked<A> {
         }
     }
 
-    pub fn lock(&self) -> spin::MutexGuard<A> {
+    pub fn lock(&self) -> spin::MutexGuard<'_, A> {
         self.inner.lock()
     }
 }
@@ -65,9 +69,17 @@ pub fn init_heap(
     Ok(())
 }
 
-
 #[global_allocator]
-static ALLOCATOR: Locked<BumpAllocator> = Locked::new(BumpAllocator::new());
+static ALLOCATOR: Locked<FixedSizeBlockAllocator> = Locked::new(
+    FixedSizeBlockAllocator::new());
+
+// #[global_allocator]
+// static ALLOCATOR: Locked<LinkedListAllocator> =
+//     Locked::new(LinkedListAllocator::new());
+
+
+// #[global_allocator]
+// static ALLOCATOR: Locked<BumpAllocator> = Locked::new(BumpAllocator::new());
 
 // #[global_allocator]
 // static ALLOCATOR: LockedHeap = LockedHeap::empty();
