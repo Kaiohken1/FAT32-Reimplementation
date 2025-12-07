@@ -12,10 +12,21 @@ use fat32_impl::disk::Fat32FileSystem;
 
 entry_point!(main);
 
-const DISK_IMAGE: &[u8] = include_bytes!("../fat32.img");
+const DISK_IMAGE: &[u8] = include_bytes!("./test.img");
 
 #[test_case]
-fn init() {
+fn ls_test() {
+    use fat32_impl::disk::{list_directory_entries, list_files_names};
+    let fs = Fat32FileSystem::new(DISK_IMAGE);
+
+    let files = list_directory_entries(&fs, fs.root_cluster);
+    let files_list = list_files_names(&files);
+
+    assert_eq!(["test.txt"], files_list.as_slice());
+}
+
+#[test_case]
+fn init_test() {
     let fs = Fat32FileSystem::new(DISK_IMAGE);
     let root_data = fs.read_cluster(fs.root_cluster);
     assert_ne!(0, fs.data_sector);
