@@ -6,12 +6,10 @@
 
 extern crate alloc;
 
-use alloc::string::String;
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
 use fat32_impl::disk::Fat32FileSystem;
 use fat32_impl::disk::{list_directory_entries, list_files_names};
-use fat32_impl::serial_print;
 
 entry_point!(main);
 
@@ -24,10 +22,8 @@ fn read_test() {
     let files = list_directory_entries(&fs, fs.root_cluster);
 
     for file in files {
-        let mut data = fs.read_file(file.start_cluster);
-        data.truncate(file.size as usize);
-        let data_string = String::from_utf8(data).unwrap();
-        assert_eq!("test\n", data_string);
+        let data = fs.read_file(&file);
+        assert_eq!("test\n", data);
     }
 }
 
