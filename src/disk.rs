@@ -1,6 +1,8 @@
 use alloc::string::ToString;
 use alloc::{string::String, vec::Vec};
 
+use crate::serial_print;
+
 #[derive(Debug, Copy, Clone)]
 pub struct Fat32FileSystem {
     pub disk: &'static [u8],
@@ -93,25 +95,92 @@ impl Fat32FileSystem {
         entry & 0x0FFFFFFF
     }
 
-    pub fn read_file(&self, file: &FileInfo) -> String {
+    pub fn read_file(&self, path: &str, current_cluster: Option<u32>) -> Result<String, &str> {
+        let file = self
+            .parse_path(path, current_cluster)
+            .ok_or("File not found")?;
+
         let mut data = Vec::new();
         let mut cluster = file.start_cluster;
 
         loop {
             data.extend(self.read_cluster(cluster));
-
             let next = self.read_fat_entry(cluster);
 
             if next >= 0x0FFFFFF8 {
                 break;
             }
 
-            cluster = next
+            cluster = next;
         }
 
         data.truncate(file.size as usize);
 
-        String::from_utf8(data).unwrap()
+        String::from_utf8(data).map_err(|_| "Invalid UTF-8 content")
+    }
+
+    fn parse_path(&self, path: &str, current_cluster: Option<u32>) -> Option<FileInfo> {
+        let mut cluster = if path.starts_with("/") {
+            self.root_cluster
+        } else {
+            current_cluster.unwrap_or(self.root_cluster)
+        };
+
+        let parts: Vec<&str> = path.split("/").filter(|s| !s.is_empty()).collect();
+
+        for (i, part) in parts.iter().enumerate() {
+            let files = list_directory_entries(self, cluster);
+
+            match *part {
+                "." => continue,
+                ".." => {
+                    if let Some(parent_cluster) = self.find_parent_cluster(cluster) {
+                        cluster = parent_cluster;
+                    } else {
+                        return None;
+                    }
+                    continue;
+                }
+                _ => {}
+            }
+
+            let file_opt = files.iter().find(|f| f.name == *part);
+            let file = match file_opt {
+                Some(f) => f.clone(),
+                None => return None,
+            };
+
+            if i == parts.len() - 1 {
+                return Some(file);
+            } else {
+                if !file.is_directory {
+                    return None;
+                }
+                cluster = file.start_cluster;
+            }
+        }
+
+        None
+    }
+
+    fn find_parent_cluster(&self, current_cluster: u32) -> Option<u32> {
+        if current_cluster == self.root_cluster {
+            return None;
+        }
+
+        let files = list_directory_entries(self, current_cluster);
+
+        if let Some(parent_dir_entry) = files.iter().find(|f| f.name == "..") {
+            let parent_cluster = parent_dir_entry.start_cluster;
+
+            if parent_cluster == 0 {
+                return Some(self.root_cluster);
+            }
+
+            return Some(parent_cluster);
+        }
+
+        None
     }
 }
 
@@ -225,7 +294,7 @@ impl LongFileName {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FileInfo {
     pub name: String,
     pub is_directory: bool,

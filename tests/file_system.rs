@@ -6,6 +6,7 @@
 
 extern crate alloc;
 
+use alloc::string::ToString;
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
 use fat32_impl::disk::Fat32FileSystem;
@@ -19,12 +20,11 @@ const DISK_IMAGE: &[u8] = include_bytes!("./test.img");
 fn read_test() {
     let fs = Fat32FileSystem::new(DISK_IMAGE);
 
-    let files = list_directory_entries(&fs, fs.root_cluster);
-
-    for file in files {
-        let data = fs.read_file(&file);
-        assert_eq!("test\n", data);
-    }
+    let data = match fs.read_file("/test_dir/test_dir_file", None) {
+        Ok(content) => content,
+        Err(e) => e.to_string(),
+    };
+    assert_eq!("test d'écriture dans un fichier d'un dossier\n", data);
 }
 
 #[test_case]
@@ -34,7 +34,7 @@ fn ls_test() {
     let files = list_directory_entries(&fs, fs.root_cluster);
     let files_list = list_files_names(&files);
 
-    assert_eq!(["test.txt"], files_list.as_slice());
+    assert_eq!(["test.txt", "test_dir"], files_list.as_slice());
 }
 
 #[test_case]
