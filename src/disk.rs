@@ -82,10 +82,31 @@ impl Fat32FileSystem {
         data
     }
 
-    pub fn parse_cluster(&self, data: &[u8]) -> FatDir {
-        let dir_data: FatDir = FatDir::new(data);
+    fn read_fat_entry(&self, cluster_id: u32) -> u32 {
+        let fat_offset = cluster_id * 4;
+        let fat_sector = self.fat_sector + fat_offset / self.bytes_per_sector;
+        let fat_index = (fat_offset % self.bytes_per_sector) as usize;
+        let sector = self.read_sector(fat_sector);
 
-        dir_data
+        u32::from_le_bytes(sector[fat_index..fat_index + 4].try_into().unwrap())
+    }
+
+    pub fn read_file(&self, start_cluster: u32) -> Vec<u8> {
+        let mut data = Vec::new();
+        let mut cluster = start_cluster;
+
+        loop {
+            data.extend(self.read_cluster(cluster));
+
+            let next = self.read_fat_entry(cluster);
+
+            if next >= 0x0FFFFFF8 {
+                break;
+            }
+
+            cluster = next
+        }
+        data
     }
 }
 

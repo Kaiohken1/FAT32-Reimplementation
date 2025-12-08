@@ -6,17 +6,33 @@
 
 extern crate alloc;
 
+use alloc::string::String;
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
 use fat32_impl::disk::Fat32FileSystem;
+use fat32_impl::disk::{list_directory_entries, list_files_names};
+use fat32_impl::serial_print;
 
 entry_point!(main);
 
 const DISK_IMAGE: &[u8] = include_bytes!("./test.img");
 
 #[test_case]
+fn read_test() {
+    let fs = Fat32FileSystem::new(DISK_IMAGE);
+
+    let files = list_directory_entries(&fs, fs.root_cluster);
+
+    for file in files {
+        let mut data = fs.read_file(file.start_cluster);
+        data.truncate(file.size as usize);
+        let data_string = String::from_utf8(data).unwrap();
+        assert_eq!("test\n", data_string);
+    }
+}
+
+#[test_case]
 fn ls_test() {
-    use fat32_impl::disk::{list_directory_entries, list_files_names};
     let fs = Fat32FileSystem::new(DISK_IMAGE);
 
     let files = list_directory_entries(&fs, fs.root_cluster);
