@@ -6,15 +6,28 @@
 
 extern crate alloc;
 
+use alloc::rc::Rc;
 use alloc::string::ToString;
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
-use fat32_impl::disk::Fat32FileSystem;
+use fat32_impl::disk::{Fat32FileSystem, ShellSession};
 use fat32_impl::disk::{list_directory_entries, list_files_names};
 
 entry_point!(main);
 
 const DISK_IMAGE: &[u8] = include_bytes!("./test.img");
+
+#[test_case]
+fn cd_test() {
+    let fs = Fat32FileSystem::new(DISK_IMAGE);
+
+    let mut shell_session = ShellSession::new(Rc::new(fs));
+    let first_cluster = shell_session.current_cluster;
+
+    shell_session.cd("test_dir").unwrap();
+
+    assert_ne!(first_cluster, shell_session.current_cluster);
+}
 
 #[test_case]
 fn read_test() {

@@ -6,9 +6,12 @@
 
 extern crate alloc;
 
+use alloc::rc::Rc;
 // use alloc::{boxed::Box, vec, vec::Vec, rc::Rc};
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
+use fat32_impl::disk::Fat32FileSystem;
+use fat32_impl::disk::ShellSession;
 use fat32_impl::println;
 
 entry_point!(kernel_main);
@@ -26,6 +29,18 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_map) };
 
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
+
+    const DISK_IMAGE: &[u8] = include_bytes!("../test.img");
+
+    let fs = Fat32FileSystem::new(DISK_IMAGE);
+
+    let mut shell_session = ShellSession::new(Rc::new(fs));
+
+    shell_session.ls();
+
+    shell_session.cd("test_dir").unwrap();
+
+    shell_session.ls();
 
     #[cfg(test)]
     test_main();
