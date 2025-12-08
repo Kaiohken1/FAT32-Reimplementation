@@ -12,6 +12,7 @@ use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
 use fat32_impl::disk::Fat32FileSystem;
 use fat32_impl::disk::ShellSession;
+use fat32_impl::disk::list_directory_entries;
 use fat32_impl::println;
 
 entry_point!(kernel_main);
@@ -39,6 +40,10 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     shell_session.ls();
 
     shell_session.cd("test_dir").unwrap();
+
+    shell_session.ls();
+
+    shell_session.cd("../").unwrap();
 
     shell_session.ls();
 

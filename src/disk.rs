@@ -2,7 +2,7 @@ use alloc::rc::Rc;
 use alloc::string::ToString;
 use alloc::{string::String, vec::Vec};
 
-use crate::print;
+use crate::{print, println};
 
 #[derive(Debug, Copy, Clone)]
 pub struct Fat32FileSystem {
@@ -137,6 +137,15 @@ impl Fat32FileSystem {
                 ".." => {
                     if let Some(parent_cluster) = self.find_parent_cluster(cluster) {
                         cluster = parent_cluster;
+
+                        if i == parts.len() - 1 {
+                            return Some(FileInfo {
+                                name: "..".to_string(),
+                                is_directory: true,
+                                size: 0,
+                                start_cluster: cluster,
+                            });
+                        }
                     } else {
                         return None;
                     }
@@ -558,7 +567,7 @@ impl ShellSession {
         let file = self
             .fs
             .parse_path(path, Some(self.current_cluster))
-            .ok_or("File not found")?;
+            .ok_or("Entry not found")?;
 
         if !file.is_directory {
             return Err("Not a directory");
