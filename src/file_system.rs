@@ -2,7 +2,7 @@ use alloc::rc::Rc;
 use alloc::string::ToString;
 use alloc::{string::String, vec::Vec};
 
-use crate::{print, println};
+use crate::{print};
 
 #[derive(Debug, Copy, Clone)]
 pub struct Fat32FileSystem {
@@ -139,12 +139,7 @@ impl Fat32FileSystem {
                         cluster = parent_cluster;
 
                         if i == parts.len() - 1 {
-                            return Some(FileInfo {
-                                name: "..".to_string(),
-                                is_directory: true,
-                                size: 0,
-                                start_cluster: cluster,
-                            });
+                            return Some(FileInfo::new("..".to_string(), true, 0, cluster));
                         }
                     } else {
                         return None;
@@ -304,7 +299,7 @@ impl LongFileName {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FileInfo {
     pub name: String,
     pub is_directory: bool,
@@ -576,5 +571,12 @@ impl ShellSession {
         self.current_cluster = file.start_cluster;
 
         Ok(())
+    }
+
+    pub fn ls_entries(&self) -> Vec<FileInfo> {
+        list_directory_entries(&self.fs, self.current_cluster)
+            .into_iter()
+            .filter(|f| f.name != "." && f.name != "..")
+            .collect()
     }
 }

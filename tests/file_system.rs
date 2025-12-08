@@ -10,8 +10,8 @@ use alloc::rc::Rc;
 use alloc::string::ToString;
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
-use fat32_impl::disk::{Fat32FileSystem, ShellSession};
-use fat32_impl::disk::{list_directory_entries, list_files_names};
+use fat32_impl::file_system::{Fat32FileSystem, ShellSession};
+use fat32_impl::file_system::{list_directory_entries, list_files_names};
 
 entry_point!(main);
 
@@ -20,13 +20,18 @@ const DISK_IMAGE: &[u8] = include_bytes!("./test.img");
 #[test_case]
 fn cd_test() {
     let fs = Fat32FileSystem::new(DISK_IMAGE);
+    let mut shell = ShellSession::new(Rc::new(fs));
 
-    let mut shell_session = ShellSession::new(Rc::new(fs));
-    let first_cluster = shell_session.current_cluster;
+    let root_ls = shell.ls_entries();
+    assert!(root_ls.iter().any(|e| e.name == "test_dir"));
 
-    shell_session.cd("test_dir").unwrap();
+    shell.cd("test_dir").unwrap();
+    let test_dir_ls = shell.ls_entries();
+    assert!(test_dir_ls.iter().any(|e| e.name == "test_dir_file"));
 
-    assert_ne!(first_cluster, shell_session.current_cluster);
+    shell.cd("..").unwrap();
+    let back_ls = shell.ls_entries();
+    assert!(back_ls == root_ls);
 }
 
 #[test_case]

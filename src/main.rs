@@ -10,9 +10,8 @@ use alloc::rc::Rc;
 // use alloc::{boxed::Box, vec, vec::Vec, rc::Rc};
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
-use fat32_impl::disk::Fat32FileSystem;
-use fat32_impl::disk::ShellSession;
-use fat32_impl::disk::list_directory_entries;
+use fat32_impl::file_system::Fat32FileSystem;
+use fat32_impl::file_system::ShellSession;
 use fat32_impl::println;
 
 entry_point!(kernel_main);
