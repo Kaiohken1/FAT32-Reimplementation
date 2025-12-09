@@ -68,16 +68,7 @@ impl ShellSession {
     }
 
     pub fn cat(&self, path: &str) -> Result<(), &str> {
-        let file = self
-            .fs
-            .parse_path(path, Some(self.current_cluster))
-            .ok_or("Entry not found")?;
-
-        if file.is_directory {
-            return Err("Not a file");
-        }
-
-        let data = match self.fs.read_file("/test_dir/test_dir_file", None) {
+        let data = match self.fs.read_file(path, None) {
             Ok(content) => content,
             Err(e) => e.to_string(),
         };

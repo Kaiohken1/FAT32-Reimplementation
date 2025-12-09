@@ -100,6 +100,10 @@ impl Fat32FileSystem {
             .parse_path(path, current_cluster)
             .ok_or("File not found")?;
 
+        if file.is_directory {
+            return Err("Not a file");
+        }
+
         let mut data = Vec::new();
         let mut cluster = file.start_cluster;
 
