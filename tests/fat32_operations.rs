@@ -13,14 +13,21 @@ use core::panic::PanicInfo;
 use fat32_impl::file_system::{Fat32FileSystem, interface::ShellSession};
 use fat32_impl::file_system::{list_directory_entries, list_files_names};
 
+use lazy_static::lazy_static;
+use spin::Mutex;
+
 entry_point!(main);
 
 const DISK_IMAGE: &[u8] = include_bytes!("./test.img");
 
+lazy_static! {
+    static ref FS: Mutex<Fat32FileSystem> = Mutex::new(Fat32FileSystem::new(DISK_IMAGE));
+}
+
 #[test_case]
 fn cd_test() {
-    let fs = Fat32FileSystem::new(DISK_IMAGE);
-    let mut shell = ShellSession::new(Rc::new(fs));
+    let fs_ref = FS.lock();
+    let mut shell = ShellSession::new(Rc::new(*fs_ref));
 
     let root_ls = shell.ls_entries();
     assert!(root_ls.iter().any(|e| e.name == "test_dir"));
@@ -36,7 +43,7 @@ fn cd_test() {
 
 #[test_case]
 fn read_test() {
-    let fs = Fat32FileSystem::new(DISK_IMAGE);
+    let fs = FS.lock();
 
     let data = match fs.read_file("/test_dir/test_dir_file", None) {
         Ok(content) => content,
@@ -47,7 +54,7 @@ fn read_test() {
 
 #[test_case]
 fn ls_test() {
-    let fs = Fat32FileSystem::new(DISK_IMAGE);
+    let fs = FS.lock();
 
     let files = list_directory_entries(&fs, fs.root_cluster);
     let files_list = list_files_names(&files);

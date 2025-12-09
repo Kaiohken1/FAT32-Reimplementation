@@ -12,8 +12,16 @@ use fat32_impl::file_system::interface::ShellSession;
 use core::panic::PanicInfo;
 use fat32_impl::file_system::Fat32FileSystem;
 use fat32_impl::println;
+use lazy_static::lazy_static;
+use spin::Mutex;
 
 entry_point!(kernel_main);
+
+const DISK_IMAGE: &[u8] = include_bytes!("../test.img");
+
+lazy_static! {
+    static ref FS: Mutex<Fat32FileSystem> = Mutex::new(Fat32FileSystem::new(DISK_IMAGE));
+}
 
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     use fat32_impl::allocator;
@@ -29,11 +37,8 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
 
-    const DISK_IMAGE: &[u8] = include_bytes!("../test.img");
-
-    let fs = Fat32FileSystem::new(DISK_IMAGE);
-
-    let mut shell_session = ShellSession::new(Rc::new(fs));
+    let fs_ref = FS.lock();
+    let mut shell_session = ShellSession::new(Rc::new(*fs_ref));
 
     shell_session.ls(None).unwrap();
 
