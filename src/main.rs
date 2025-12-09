@@ -7,11 +7,10 @@
 extern crate alloc;
 
 use alloc::rc::Rc;
-// use alloc::{boxed::Box, vec, vec::Vec, rc::Rc};
 use bootloader::{BootInfo, entry_point};
+use fat32_impl::file_system::interface::ShellSession;
 use core::panic::PanicInfo;
 use fat32_impl::file_system::Fat32FileSystem;
-use fat32_impl::file_system::ShellSession;
 use fat32_impl::println;
 
 entry_point!(kernel_main);
@@ -36,15 +35,17 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     let mut shell_session = ShellSession::new(Rc::new(fs));
 
-    shell_session.ls();
+    shell_session.ls(None).unwrap();
 
     shell_session.cd("test_dir").unwrap();
 
-    shell_session.ls();
+    shell_session.ls(None).unwrap();
 
     shell_session.cd("../").unwrap();
 
-    shell_session.ls();
+    shell_session.ls(None).unwrap();
+
+    shell_session.ls(Some("test_dir")).unwrap();
 
     #[cfg(test)]
     test_main();

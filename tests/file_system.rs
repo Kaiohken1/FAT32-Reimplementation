@@ -10,7 +10,7 @@ use alloc::rc::Rc;
 use alloc::string::ToString;
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
-use fat32_impl::file_system::{Fat32FileSystem, ShellSession};
+use fat32_impl::file_system::{Fat32FileSystem, interface::ShellSession};
 use fat32_impl::file_system::{list_directory_entries, list_files_names};
 
 entry_point!(main);

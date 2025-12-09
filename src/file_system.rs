@@ -1,8 +1,7 @@
-use alloc::rc::Rc;
+pub mod interface;
+
 use alloc::string::ToString;
 use alloc::{string::String, vec::Vec};
-
-use crate::{print};
 
 #[derive(Debug, Copy, Clone)]
 pub struct Fat32FileSystem {
@@ -526,57 +525,4 @@ fn process_data_entry(
 
 pub fn list_files_names<'a>(files: &'a [FileInfo]) -> Vec<&'a str> {
     files.iter().map(|f| f.name.as_str()).collect()
-}
-
-pub struct ShellSession {
-    fs: Rc<Fat32FileSystem>,
-    pub current_cluster: u32,
-}
-
-impl ShellSession {
-    pub fn new(fs: Rc<Fat32FileSystem>) -> ShellSession {
-        let current_cluster = fs.root_cluster;
-        ShellSession {
-            fs,
-            current_cluster,
-        }
-    }
-
-    pub fn ls(&self) {
-        let files = list_directory_entries(&self.fs, self.current_cluster);
-
-        print!("> ");
-        for f in files.iter() {
-            if f.name == "." || f.name == ".." {
-                continue;
-            }
-
-            let file_type = if f.is_directory { "[DIR]" } else { "[FILE]" };
-
-            print!("{} {} ", file_type, f.name);
-        }
-        print!("\n");
-    }
-
-    pub fn cd(&mut self, path: &str) -> Result<(), &str> {
-        let file = self
-            .fs
-            .parse_path(path, Some(self.current_cluster))
-            .ok_or("Entry not found")?;
-
-        if !file.is_directory {
-            return Err("Not a directory");
-        }
-
-        self.current_cluster = file.start_cluster;
-
-        Ok(())
-    }
-
-    pub fn ls_entries(&self) -> Vec<FileInfo> {
-        list_directory_entries(&self.fs, self.current_cluster)
-            .into_iter()
-            .filter(|f| f.name != "." && f.name != "..")
-            .collect()
-    }
 }
