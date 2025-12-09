@@ -47,6 +47,8 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     shell_session.ls(Some("test_dir")).unwrap();
 
+    shell_session.cat("test_dir/test_dir_file").unwrap();
+
     #[cfg(test)]
     test_main();
 

@@ -1,5 +1,5 @@
-use alloc::{rc::Rc, vec::Vec};
-use crate::{file_system::{Fat32FileSystem, FileInfo, list_directory_entries}, print};
+use alloc::{rc::Rc, vec::Vec, string::ToString};
+use crate::{file_system::{Fat32FileSystem, FileInfo, list_directory_entries}, print, println};
 
 pub struct ShellSession {
     fs: Rc<Fat32FileSystem>,
@@ -65,5 +65,24 @@ impl ShellSession {
             .into_iter()
             .filter(|f| f.name != "." && f.name != "..")
             .collect()
+    }
+
+    pub fn cat(&self, path: &str) -> Result<(), &str> {
+        let file = self
+            .fs
+            .parse_path(path, Some(self.current_cluster))
+            .ok_or("Entry not found")?;
+
+        if file.is_directory {
+            return Err("Not a file");
+        }
+
+        let data = match self.fs.read_file("/test_dir/test_dir_file", None) {
+            Ok(content) => content,
+            Err(e) => e.to_string(),
+        };
+
+        println!("{}", data);
+        Ok(())
     }
 }
