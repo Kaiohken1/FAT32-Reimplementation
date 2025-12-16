@@ -8,9 +8,9 @@ extern crate alloc;
 
 use alloc::rc::Rc;
 use bootloader::{BootInfo, entry_point};
-use fat32_impl::file_system::interface::ShellSession;
 use core::panic::PanicInfo;
 use fat32_impl::file_system::Fat32FileSystem;
+use fat32_impl::file_system::interface::ShellSession;
 use fat32_impl::println;
 use lazy_static::lazy_static;
 use spin::Mutex;
