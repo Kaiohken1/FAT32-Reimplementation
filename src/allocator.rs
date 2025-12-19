@@ -14,7 +14,7 @@ use x86_64::{
 use fixed_size_block::FixedSizeBlockAllocator;
 
 pub const HEAP_START: usize = 0x_4444_4444_0000;
-pub const HEAP_SIZE: usize = 100 * 1024;
+pub const HEAP_SIZE: usize = 40 * 1024 * 1024;
 
 fn align_up(addr: usize, align: usize) -> usize {
     let remainder = addr % align;

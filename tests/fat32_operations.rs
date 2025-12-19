@@ -12,22 +12,24 @@ use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
 use fat32_impl::file_system::{Fat32FileSystem, interface::ShellSession};
 use fat32_impl::file_system::{list_directory_entries, list_files_names};
-
-use lazy_static::lazy_static;
 use spin::Mutex;
 
 entry_point!(main);
 
 const DISK_IMAGE: &[u8] = include_bytes!("./test.img");
+//TODO Trouver une méthode plus optimisée pour charger le file system une seule fois
+fn init_fs() -> Rc<Mutex<Fat32FileSystem>> {
+    let disk_box = alloc::vec::Vec::from(DISK_IMAGE).into_boxed_slice();
+    let fs = Fat32FileSystem::new(disk_box);
 
-lazy_static! {
-    static ref FS: Mutex<Fat32FileSystem> = Mutex::new(Fat32FileSystem::new(DISK_IMAGE));
+    Rc::new(Mutex::new(fs))
 }
 
 #[test_case]
 fn cd_test() {
-    let fs_ref = FS.lock();
-    let mut shell = ShellSession::new(Rc::new(*fs_ref));
+    let fs = init_fs();
+
+    let mut shell = ShellSession::new(fs.clone());
 
     let root_ls = shell.ls_entries();
     assert!(root_ls.iter().any(|e| e.name == "test_dir"));
@@ -43,9 +45,10 @@ fn cd_test() {
 
 #[test_case]
 fn read_test() {
-    let fs = FS.lock();
+    let fs = init_fs();
+    let fs_lock = fs.lock();
 
-    let data = match fs.read_file("/test_dir/test_dir_file", None) {
+    let data = match fs_lock.read_file("/test_dir/test_dir_file", None) {
         Ok(content) => content,
         Err(e) => e.to_string(),
     };
@@ -54,9 +57,10 @@ fn read_test() {
 
 #[test_case]
 fn ls_test() {
-    let fs = FS.lock();
+    let fs = init_fs();
+    let fs_lock = fs.lock();
 
-    let files = list_directory_entries(&fs, fs.root_cluster);
+    let files = list_directory_entries(&fs_lock, fs_lock.root_cluster);
     let files_list = list_files_names(&files);
 
     assert_eq!(["test.txt", "test_dir"], files_list.as_slice());
@@ -64,14 +68,16 @@ fn ls_test() {
 
 #[test_case]
 fn init_test() {
-    let fs = Fat32FileSystem::new(DISK_IMAGE);
-    let root_data = fs.read_cluster(fs.root_cluster);
-    assert_ne!(0, fs.data_sector);
-    assert_ne!(0, fs.fat_sector);
-    assert!(fs.root_cluster >= 2);
+    let fs = init_fs();
+    let fs_lock = fs.lock();
+
+    let root_data = fs_lock.read_cluster(fs_lock.root_cluster);
+    assert_ne!(0, fs_lock.data_sector);
+    assert_ne!(0, fs_lock.fat_sector);
+    assert!(fs_lock.root_cluster >= 2);
     assert_ne!(0, root_data.len());
 
-    let expected_size = (fs.sectors_per_cluster * fs.bytes_per_sector) as usize;
+    let expected_size = (fs_lock.sectors_per_cluster * fs_lock.bytes_per_sector) as usize;
     assert_eq!(
         expected_size,
         root_data.len(),

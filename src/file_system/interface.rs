@@ -9,10 +9,11 @@
 //! [`FileInfo`] pour abstraire le format FAT32
 
 use crate::{
-    file_system::{list_directory_entries, Fat32FileSystem, FileInfo},
+    file_system::{Fat32FileSystem, FileInfo, list_directory_entries},
     print, println,
 };
 use alloc::{rc::Rc, string::ToString, vec::Vec};
+use spin::Mutex;
 
 /// Représente une session de shell FAT32.
 ///
@@ -21,7 +22,7 @@ use alloc::{rc::Rc, string::ToString, vec::Vec};
 /// - le cluster courant (équivalent du répertoire courant)
 pub struct ShellSession {
     /// Système de fichiers FAT32 partagé
-    fs: Rc<Fat32FileSystem>,
+    fs: Rc<Mutex<Fat32FileSystem>>,
 
     /// Cluster courant (répertoire actif)
     pub current_cluster: u32,
@@ -31,8 +32,8 @@ impl ShellSession {
     /// Crée une nouvelle session de shell
     ///
     /// Le répertoire courant est initialisé au cluster racine
-    pub fn new(fs: Rc<Fat32FileSystem>) -> ShellSession {
-        let current_cluster = fs.root_cluster;
+    pub fn new(fs: Rc<Mutex<Fat32FileSystem>>) -> ShellSession {
+        let current_cluster = fs.lock().root_cluster;
         ShellSession {
             fs,
             current_cluster,
@@ -55,6 +56,7 @@ impl ShellSession {
             Some(p) => {
                 let file = self
                     .fs
+                    .lock()
                     .parse_path(p, Some(self.current_cluster))
                     .ok_or("Entry not found")?;
 
@@ -63,7 +65,7 @@ impl ShellSession {
             None => cluster = self.current_cluster,
         }
 
-        let files = list_directory_entries(&self.fs, cluster);
+        let files = list_directory_entries(&self.fs.lock(), cluster);
 
         print!("> ");
         for f in files.iter() {
@@ -91,6 +93,7 @@ impl ShellSession {
     pub fn cd(&mut self, path: &str) -> Result<(), &str> {
         let file = self
             .fs
+            .lock()
             .parse_path(path, Some(self.current_cluster))
             .ok_or("Entry not found")?;
 
@@ -106,7 +109,7 @@ impl ShellSession {
     ///
     /// Les entrées spéciales `.` et `..` sont filtrées
     pub fn ls_entries(&self) -> Vec<FileInfo> {
-        list_directory_entries(&self.fs, self.current_cluster)
+        list_directory_entries(&self.fs.lock(), self.current_cluster)
             .into_iter()
             .filter(|f| f.name != "." && f.name != "..")
             .collect()
@@ -117,7 +120,7 @@ impl ShellSession {
     /// Le contenu est affiché tel quel sur la sortie standard
     /// En cas d’erreur, le message est affiché à la place
     pub fn cat(&self, path: &str) -> Result<(), &str> {
-        let data = match self.fs.read_file(path, None) {
+        let data = match self.fs.lock().read_file(path, None) {
             Ok(content) => content,
             Err(e) => e.to_string(),
         };

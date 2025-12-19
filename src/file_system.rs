@@ -8,14 +8,15 @@
 //! - de lire le contenu d’un fichier texte via son chemin
 pub mod interface;
 
+use alloc::boxed::Box;
 use alloc::string::ToString;
 use alloc::{string::String, vec::Vec};
 
 /// Représente un système de fichiers FAT32 monté en mémoire
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct Fat32FileSystem {
     /// Disque brut monté en mémoire (image FAT32)
-    pub disk: &'static [u8],
+    pub disk: Box<[u8]>,
 
     /// Nombre d’octets par secteur
     pub bytes_per_sector: u32,
@@ -65,13 +66,13 @@ impl Fat32FileSystem {
     /// - parse le secteur de boot,
     /// - calcule les offsets FAT et data,
     /// - identifie le cluster racine.
-    pub fn new(disk: &'static [u8]) -> Self {
-        let bytes_per_sector = Self::read_u16(disk, BootOffsets::BytsPerSec) as u32;
+    pub fn new(disk: Box<[u8]>) -> Self {
+        let bytes_per_sector = Self::read_u16(&disk, BootOffsets::BytsPerSec) as u32;
         let sectors_per_cluster = disk[BootOffsets::SecPerClus as usize] as u32;
-        let reserved_sectors_count = Self::read_u16(disk, BootOffsets::RsvdSecCnt) as u32;
+        let reserved_sectors_count = Self::read_u16(&disk, BootOffsets::RsvdSecCnt) as u32;
         let num_fats = disk[BootOffsets::NumFATs as usize] as u32;
-        let sectors_per_fat = Self::read_u32(disk, BootOffsets::FATSz32);
-        let root_cluster = Self::read_u32(disk, BootOffsets::RootClus);
+        let sectors_per_fat = Self::read_u32(&disk, BootOffsets::FATSz32);
+        let root_cluster = Self::read_u32(&disk, BootOffsets::RootClus);
 
         let fat_sector = reserved_sectors_count;
         let data_sector = reserved_sectors_count + num_fats * sectors_per_fat;
