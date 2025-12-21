@@ -167,7 +167,7 @@ impl Fat32FileSystem {
 
     /// Résout un chemin en parcourant récursivement les répertoires.
     fn parse_path(&self, path: &str, current_cluster: Option<u32>) -> Option<FileInfo> {
-        let mut cluster = if path.starts_with("/") {
+        let mut cluster = if path.starts_with("/") || path.is_empty() {
             self.root_cluster
         } else {
             current_cluster.unwrap_or(self.root_cluster)
@@ -247,13 +247,17 @@ impl Fat32FileSystem {
         let fat_offset = cluster_id * 4;
         let sector_num = self.fat_sector + (fat_offset / self.bytes_per_sector);
         let offset_in_sector = (fat_offset % self.bytes_per_sector) as usize;
-        
+
         let global_offset = (sector_num * self.bytes_per_sector) as usize + offset_in_sector;
-        
-        let current_value = u32::from_le_bytes(self.disk[global_offset..global_offset+4].try_into().unwrap());
+
+        let current_value = u32::from_le_bytes(
+            self.disk[global_offset..global_offset + 4]
+                .try_into()
+                .unwrap(),
+        );
         let new_value = (current_value & 0xF0000000) | (value & 0x0FFFFFFF);
-        
-        self.disk[global_offset..global_offset+4].copy_from_slice(&new_value.to_le_bytes());
+
+        self.disk[global_offset..global_offset + 4].copy_from_slice(&new_value.to_le_bytes());
     }
 
     /// Convertit un nom de fichier standard en format court 8.3 (SFN).
@@ -265,8 +269,10 @@ impl Fat32FileSystem {
     fn format_to_8_3(name: &str) -> Result<[u8; 11], &str> {
         let mut res = [b' '; 11];
         let parts: Vec<&str> = name.split('.').collect();
-        
-        if parts.is_empty() || parts[0].is_empty() { return Err("Invalid name"); }
+
+        if parts.is_empty() || parts[0].is_empty() {
+            return Err("Invalid name");
+        }
 
         let name_part = parts[0].to_uppercase();
         let name_bytes = name_part.as_bytes();
@@ -304,7 +310,8 @@ impl Fat32FileSystem {
 
         let idx = {
             let cluster_data = self.read_cluster(parent_cluster);
-            cluster_data.chunks_exact(32)
+            cluster_data
+                .chunks_exact(32)
                 .enumerate()
                 .find(|(_, chunk)| chunk[0] == 0x00 || chunk[0] == 0xE5)
                 .map(|(i, _)| i)
@@ -314,7 +321,7 @@ impl Fat32FileSystem {
         let mut new_entry = [0u8; 32];
         new_entry[0..11].copy_from_slice(&short_name);
         new_entry[11] = 0x20;
-        
+
         let high = (new_file_cluster >> 16) as u16;
         let low = (new_file_cluster & 0xFFFF) as u16;
         new_entry[20..22].copy_from_slice(&high.to_le_bytes());
@@ -329,19 +336,20 @@ impl Fat32FileSystem {
     fn write_directory_entry(&mut self, cluster_id: u32, entry_idx: usize, data: [u8; 32]) {
         let start_sector = self.data_sector + (cluster_id - 2) * self.sectors_per_cluster;
         let offset_in_cluster = entry_idx * 32;
-        
+
         let sector_offset = (offset_in_cluster as u32) / self.bytes_per_sector;
         let byte_offset_in_sector = offset_in_cluster % (self.bytes_per_sector as usize);
 
-        let global_offset = ((start_sector + sector_offset) * self.bytes_per_sector) as usize + byte_offset_in_sector;
-        
+        let global_offset = ((start_sector + sector_offset) * self.bytes_per_sector) as usize
+            + byte_offset_in_sector;
+
         self.disk[global_offset..global_offset + 32].copy_from_slice(&data);
     }
 
     /// Initialise un nouveau cluster de répertoire avec les entrées obligatoires `.` et `..`.
     ///
     /// * `.` pointe vers le cluster lui-même (`current_cluster`).
-    /// * `..` pointe vers le cluster parent (`parent_cluster`). Si le parent est la racine, 
+    /// * `..` pointe vers le cluster parent (`parent_cluster`). Si le parent est la racine,
     ///   la valeur 0 est utilisée conformément à la spécification.
     fn init_directory_cluster(&mut self, current_cluster: u32, parent_cluster: u32) {
         let cluster_size = (self.sectors_per_cluster * self.bytes_per_sector) as usize;
@@ -354,8 +362,12 @@ impl Fat32FileSystem {
 
         data[32..43].copy_from_slice(b"..         ");
         data[43] = 0x10;
-        
-        let parent_val = if parent_cluster == self.root_cluster { 0 } else { parent_cluster };
+
+        let parent_val = if parent_cluster == self.root_cluster {
+            0
+        } else {
+            parent_cluster
+        };
         data[52..54].copy_from_slice(&((parent_val >> 16) as u16).to_le_bytes());
         data[58..60].copy_from_slice(&(parent_val as u16).to_le_bytes());
 
@@ -386,10 +398,11 @@ impl Fat32FileSystem {
         self.init_directory_cluster(new_folder_cluster, parent_cluster);
 
         let short_name = Self::format_to_8_3(folder_name)?;
-        
+
         let idx = {
             let cluster_data = self.read_cluster(parent_cluster);
-            cluster_data.chunks_exact(32)
+            cluster_data
+                .chunks_exact(32)
                 .enumerate()
                 .find(|(_, chunk)| chunk[0] == 0x00 || chunk[0] == 0xE5)
                 .map(|(i, _)| i)
@@ -399,7 +412,7 @@ impl Fat32FileSystem {
         let mut new_entry = [0u8; 32];
         new_entry[0..11].copy_from_slice(&short_name);
         new_entry[11] = 0x10;
-        
+
         let high = (new_folder_cluster >> 16) as u16;
         let low = (new_folder_cluster & 0xFFFF) as u16;
         new_entry[20..22].copy_from_slice(&high.to_le_bytes());
@@ -407,6 +420,88 @@ impl Fat32FileSystem {
         new_entry[28..32].copy_from_slice(&0u32.to_le_bytes());
 
         self.write_directory_entry(parent_cluster, idx, new_entry);
+
+        Ok(())
+    }
+
+    /// Met à jour la taille d'un fichier dans son entrée de répertoire parent.
+    ///
+    /// # Errors
+    /// Retourne une erreur si le fichier est introuvable ou si le format du nom est invalide.
+    fn update_file_size(&mut self, path: &str, new_size: u32) -> Result<(), String> {
+        let (parent_path, filename) = if let Some(pos) = path.rfind('/') {
+            (&path[..pos], &path[pos + 1..])
+        } else {
+            ("", path)
+        };
+
+        let parent_cluster = if parent_path.is_empty() || parent_path == "/" {
+            self.root_cluster
+        } else {
+            self.parse_path(parent_path, None)
+                .map(|f| f.start_cluster)
+                .unwrap_or(self.root_cluster)
+        };
+
+        let short_name = Self::format_to_8_3(filename).map_err(|e| e.to_string())?;
+
+        let entry_idx = {
+            let cluster_data = self.read_cluster(parent_cluster);
+            cluster_data
+                .chunks_exact(32)
+                .enumerate()
+                .find(|(_, chunk)| chunk[0..11] == short_name)
+                .map(|(i, _)| i)
+                .ok_or_else(|| "Entrée introuvable pour mise à jour".to_string())?
+        };
+
+        let start_sector = self.data_sector + (parent_cluster - 2) * self.sectors_per_cluster;
+        let byte_offset = (entry_idx * 32) + 28;
+        let sector_offset = byte_offset as u32 / self.bytes_per_sector;
+        let offset_in_sector = byte_offset % self.bytes_per_sector as usize;
+
+        let final_offset =
+            ((start_sector + sector_offset) * self.bytes_per_sector) as usize + offset_in_sector;
+
+        self.disk[final_offset..final_offset + 4].copy_from_slice(&new_size.to_le_bytes());
+
+        Ok(())
+    }
+
+    /// Écrit des données dans un fichier existant.
+    ///
+    /// Actuellement, cette implémentation supporte l'écriture de données ne dépassant pas la taille d'un seul cluster (limite du premier cluster alloué).
+    ///
+    /// # Détails techniques
+    /// * La fonction limite `bytes_to_write` à la taille maximale d'un cluster pour éviter tout débordement sur les clusters adjacents non liés.
+    /// * Après l'écriture des données brutes, elle appelle automatiquement [`Self::update_file_size`] pour synchroniser les métadonnées du fichier.
+    ///
+    /// # Errors
+    /// * Retourne une erreur si le chemin pointe vers un répertoire.
+    /// * Retourne une erreur si le fichier n'existe pas (le fichier doit être créé via `create_file` au préalable).
+    ///
+    /// # Panics
+    /// Peut paniquer si le calcul d'offset global dépasse les limites du disque monté.
+    pub fn write_file(&mut self, path: &str, data: &[u8]) -> Result<(), String> {
+        let file_info = self
+            .parse_path(path, None)
+            .ok_or_else(|| "Fichier non trouvé".to_string())?;
+
+        if file_info.is_directory {
+            return Err("Impossible d'écrire dans un répertoire".to_string());
+        }
+
+        let cluster_size = (self.sectors_per_cluster * self.bytes_per_sector) as usize;
+        let bytes_to_write = data.len().min(cluster_size);
+
+        let start_sector =
+            self.data_sector + (file_info.start_cluster - 2) * self.sectors_per_cluster;
+        let global_offset = (start_sector * self.bytes_per_sector) as usize;
+
+        self.disk[global_offset..global_offset + bytes_to_write]
+            .copy_from_slice(&data[..bytes_to_write]);
+
+        self.update_file_size(path, bytes_to_write as u32)?;
 
         Ok(())
     }

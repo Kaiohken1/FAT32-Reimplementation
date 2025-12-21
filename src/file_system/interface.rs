@@ -12,7 +12,11 @@ use crate::{
     file_system::{Fat32FileSystem, FileInfo, list_directory_entries},
     print, println,
 };
-use alloc::{rc::Rc, string::{String, ToString}, vec::Vec};
+use alloc::{
+    rc::Rc,
+    string::{String, ToString},
+    vec::Vec,
+};
 use spin::Mutex;
 
 /// Représente une session de shell FAT32.
@@ -129,17 +133,31 @@ impl ShellSession {
         Ok(())
     }
 
+    /// Crée un dossier (`mkdir`)
+    /// 
+    /// Renvoie un message en cas d'erreur
     pub fn mkdir(&self, parent_path: &str, folder_name: &str) -> Result<(), String> {
         let mut fs_lock = self.fs.lock();
-        
+
         fs_lock.mkdir(parent_path, folder_name)?;
-        
+
         Ok(())
     }
 
+    /// Crée un fichier (`touch`).
+    /// 
+    /// Renvoie un message en cas d'erreur
     pub fn touch(&self, parent_path: &str, file_name: &str) -> Result<(), String> {
         let mut fs_lock = self.fs.lock();
         fs_lock.create_file(parent_path, file_name)?;
         Ok(())
+    }
+
+    /// Ecrit dans un fichier (équivalent d'un echo >>).
+    /// 
+    /// Renvoie un message en cas d'erreur
+    pub fn write(&self, path: &str, text: &str) -> Result<(), String> {
+        let mut fs = self.fs.lock();
+        fs.write_file(path, text.as_bytes())
     }
 }
