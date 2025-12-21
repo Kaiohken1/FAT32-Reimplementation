@@ -51,6 +51,12 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     shell_session.cat("test_dir/test_dir_file").unwrap();
 
+    shell_session.mkdir("", "file_t").unwrap();
+
+    shell_session.mkdir("", "folder_t").unwrap();
+
+    shell_session.ls(None).unwrap();
+
     #[cfg(test)]
     test_main();
 

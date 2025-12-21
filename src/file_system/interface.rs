@@ -12,7 +12,7 @@ use crate::{
     file_system::{Fat32FileSystem, FileInfo, list_directory_entries},
     print, println,
 };
-use alloc::{rc::Rc, string::ToString, vec::Vec};
+use alloc::{rc::Rc, string::{String, ToString}, vec::Vec};
 use spin::Mutex;
 
 /// Représente une session de shell FAT32.
@@ -126,6 +126,20 @@ impl ShellSession {
         };
 
         println!("{}", data);
+        Ok(())
+    }
+
+    pub fn mkdir(&self, parent_path: &str, folder_name: &str) -> Result<(), String> {
+        let mut fs_lock = self.fs.lock();
+        
+        fs_lock.mkdir(parent_path, folder_name)?;
+        
+        Ok(())
+    }
+
+    pub fn touch(&self, parent_path: &str, file_name: &str) -> Result<(), String> {
+        let mut fs_lock = self.fs.lock();
+        fs_lock.create_file(parent_path, file_name)?;
         Ok(())
     }
 }

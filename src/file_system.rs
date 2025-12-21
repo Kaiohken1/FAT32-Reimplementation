@@ -1,4 +1,4 @@
-//! Implémentation minimale d’un lecteur FAT32 en lecture seule
+//! Implémentation d’un lecteur FAT32 en lecture/écriture
 //!
 //! Ce module permet :
 //! - de parser le secteur de boot FAT32
@@ -10,6 +10,7 @@ pub mod interface;
 
 use alloc::boxed::Box;
 use alloc::string::ToString;
+use alloc::vec;
 use alloc::{string::String, vec::Vec};
 
 /// Représente un système de fichiers FAT32 monté en mémoire
@@ -219,6 +220,195 @@ impl Fat32FileSystem {
         } else {
             parent.start_cluster
         })
+    }
+
+    /// Parcourt la FAT table pour trouver le premier cluster libre, le réserve et retourne son index.
+    ///
+    /// Un cluster est considéré libre si son entrée dans la FAT est `0x00000000`.
+    /// Une fois trouvé, il est marqué avec `0x0FFFFFFF` EOC (End of Chain).
+    ///
+    /// # Errors
+    /// Retourne une erreur si aucun cluster libre n'est trouvé dans la limite des 50 000 premiers clusters.
+    fn allocate_cluster(&mut self) -> Result<u32, String> {
+        for cluster_id in 2..50000 {
+            let entry = self.read_fat_entry(cluster_id);
+            if entry == 0x00000000 {
+                self.write_fat_entry(cluster_id, 0x0FFFFFFF);
+                return Ok(cluster_id);
+            }
+        }
+        Err("Disk full".to_string())
+    }
+
+    /// Écrit une valeur de 32 bits dans la FAT table.
+    ///
+    /// Cette fonction préserve les 4 bits de poids fort et ne modifie que les 28 bits d'adresse.
+    fn write_fat_entry(&mut self, cluster_id: u32, value: u32) {
+        let fat_offset = cluster_id * 4;
+        let sector_num = self.fat_sector + (fat_offset / self.bytes_per_sector);
+        let offset_in_sector = (fat_offset % self.bytes_per_sector) as usize;
+        
+        let global_offset = (sector_num * self.bytes_per_sector) as usize + offset_in_sector;
+        
+        let current_value = u32::from_le_bytes(self.disk[global_offset..global_offset+4].try_into().unwrap());
+        let new_value = (current_value & 0xF0000000) | (value & 0x0FFFFFFF);
+        
+        self.disk[global_offset..global_offset+4].copy_from_slice(&new_value.to_le_bytes());
+    }
+
+    /// Convertit un nom de fichier standard en format court 8.3 (SFN).
+    ///
+    /// Le résultat est un tableau de 11 octets : 8 pour le nom et 3 pour l'extension, complété par des espaces et converti en majuscules.
+    ///
+    /// # Errors
+    /// Retourne une erreur si le nom est vide ou mal formaté.
+    fn format_to_8_3(name: &str) -> Result<[u8; 11], &str> {
+        let mut res = [b' '; 11];
+        let parts: Vec<&str> = name.split('.').collect();
+        
+        if parts.is_empty() || parts[0].is_empty() { return Err("Invalid name"); }
+
+        let name_part = parts[0].to_uppercase();
+        let name_bytes = name_part.as_bytes();
+        let name_len = name_bytes.len().min(8);
+        res[0..name_len].copy_from_slice(&name_bytes[..name_len]);
+
+        if parts.len() > 1 {
+            let ext_part = parts[1].to_uppercase();
+            let ext_bytes = ext_part.as_bytes();
+            let ext_len = ext_bytes.len().min(3);
+            res[8..8 + ext_len].copy_from_slice(&ext_bytes[..ext_len]);
+        }
+
+        Ok(res)
+    }
+
+    /// Crée un nouveau fichier vide dans le répertoire spécifié.
+    ///
+    /// Cette méthode alloue un cluster, crée une entrée de répertoire avec l'attribut `0x20` (Archive) et l'inscrit dans le cluster du répertoire parent.
+    ///
+    /// # Errors
+    /// Retourne une erreur si le parent est introuvable ou si le répertoire parent est plein.
+    pub fn create_file(&mut self, parent_path: &str, filename: &str) -> Result<(), String> {
+        let parent_cluster = if parent_path.is_empty() || parent_path == "/" {
+            self.root_cluster
+        } else {
+            self.parse_path(parent_path, None)
+                .map(|f| f.start_cluster)
+                .ok_or_else(|| "Parent directory not found".to_string())?
+        };
+
+        let short_name = Self::format_to_8_3(filename)?;
+
+        let new_file_cluster = self.allocate_cluster()?;
+
+        let idx = {
+            let cluster_data = self.read_cluster(parent_cluster);
+            cluster_data.chunks_exact(32)
+                .enumerate()
+                .find(|(_, chunk)| chunk[0] == 0x00 || chunk[0] == 0xE5)
+                .map(|(i, _)| i)
+                .ok_or_else(|| "No space in parent directory".to_string())?
+        };
+
+        let mut new_entry = [0u8; 32];
+        new_entry[0..11].copy_from_slice(&short_name);
+        new_entry[11] = 0x20;
+        
+        let high = (new_file_cluster >> 16) as u16;
+        let low = (new_file_cluster & 0xFFFF) as u16;
+        new_entry[20..22].copy_from_slice(&high.to_le_bytes());
+        new_entry[26..28].copy_from_slice(&low.to_le_bytes());
+
+        self.write_directory_entry(parent_cluster, idx, new_entry);
+
+        Ok(())
+    }
+
+    /// Écrit une entrée de répertoire de 32 octets sur le disque.
+    fn write_directory_entry(&mut self, cluster_id: u32, entry_idx: usize, data: [u8; 32]) {
+        let start_sector = self.data_sector + (cluster_id - 2) * self.sectors_per_cluster;
+        let offset_in_cluster = entry_idx * 32;
+        
+        let sector_offset = (offset_in_cluster as u32) / self.bytes_per_sector;
+        let byte_offset_in_sector = offset_in_cluster % (self.bytes_per_sector as usize);
+
+        let global_offset = ((start_sector + sector_offset) * self.bytes_per_sector) as usize + byte_offset_in_sector;
+        
+        self.disk[global_offset..global_offset + 32].copy_from_slice(&data);
+    }
+
+    /// Initialise un nouveau cluster de répertoire avec les entrées obligatoires `.` et `..`.
+    ///
+    /// * `.` pointe vers le cluster lui-même (`current_cluster`).
+    /// * `..` pointe vers le cluster parent (`parent_cluster`). Si le parent est la racine, 
+    ///   la valeur 0 est utilisée conformément à la spécification.
+    fn init_directory_cluster(&mut self, current_cluster: u32, parent_cluster: u32) {
+        let cluster_size = (self.sectors_per_cluster * self.bytes_per_sector) as usize;
+        let mut data = vec![0u8; cluster_size];
+
+        data[0..11].copy_from_slice(b".          ");
+        data[11] = 0x10;
+        data[20..22].copy_from_slice(&((current_cluster >> 16) as u16).to_le_bytes());
+        data[26..28].copy_from_slice(&(current_cluster as u16).to_le_bytes());
+
+        data[32..43].copy_from_slice(b"..         ");
+        data[43] = 0x10;
+        
+        let parent_val = if parent_cluster == self.root_cluster { 0 } else { parent_cluster };
+        data[52..54].copy_from_slice(&((parent_val >> 16) as u16).to_le_bytes());
+        data[58..60].copy_from_slice(&(parent_val as u16).to_le_bytes());
+
+        let start_sector = self.data_sector + (current_cluster - 2) * self.sectors_per_cluster;
+        let offset_in_disk = (start_sector * self.bytes_per_sector) as usize;
+        self.disk[offset_in_disk..offset_in_disk + cluster_size].copy_from_slice(&data);
+    }
+    /// Crée un nouveau dossier  sur le disque.
+    ///
+    /// Cette méthode :
+    /// - Alloue un nouveau cluster.
+    /// - Initialise ce cluster avec les entrées `.` et `..`.
+    /// - Ajoute une entrée de type `0x10` (Directory) dans le répertoire parent.
+    ///
+    /// # Errors
+    /// Échoue si le disque est plein ou si le chemin parent n'existe pas.
+    pub fn mkdir(&mut self, parent_path: &str, folder_name: &str) -> Result<(), String> {
+        let parent_cluster = if parent_path.is_empty() || parent_path == "/" {
+            self.root_cluster
+        } else {
+            self.parse_path(parent_path, None)
+                .map(|f| f.start_cluster)
+                .ok_or_else(|| "Parent path not found".to_string())?
+        };
+
+        let new_folder_cluster = self.allocate_cluster()?;
+
+        self.init_directory_cluster(new_folder_cluster, parent_cluster);
+
+        let short_name = Self::format_to_8_3(folder_name)?;
+        
+        let idx = {
+            let cluster_data = self.read_cluster(parent_cluster);
+            cluster_data.chunks_exact(32)
+                .enumerate()
+                .find(|(_, chunk)| chunk[0] == 0x00 || chunk[0] == 0xE5)
+                .map(|(i, _)| i)
+                .ok_or_else(|| "No space in parent directory".to_string())?
+        };
+
+        let mut new_entry = [0u8; 32];
+        new_entry[0..11].copy_from_slice(&short_name);
+        new_entry[11] = 0x10;
+        
+        let high = (new_folder_cluster >> 16) as u16;
+        let low = (new_folder_cluster & 0xFFFF) as u16;
+        new_entry[20..22].copy_from_slice(&high.to_le_bytes());
+        new_entry[26..28].copy_from_slice(&low.to_le_bytes());
+        new_entry[28..32].copy_from_slice(&0u32.to_le_bytes());
+
+        self.write_directory_entry(parent_cluster, idx, new_entry);
+
+        Ok(())
     }
 }
 
