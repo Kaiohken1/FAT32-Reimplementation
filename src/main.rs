@@ -57,6 +57,13 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     shell_session.ls(None).unwrap();
 
+    shell_session.cd("test_dir").unwrap();
+
+    shell_session.mkdir("test_dir", "DIR_T2").expect("Erreur lors du mkdir");
+    shell_session.touch("test_dir", "FILE_T2").expect("Erreur lors du touch");
+    
+    shell_session.ls(None).unwrap();
+
     #[cfg(test)]
     test_main();
 

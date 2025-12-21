@@ -16,13 +16,61 @@ use spin::Mutex;
 
 entry_point!(main);
 
+//Image de test contenant initialement un fichier et un dossier de test 
+// [/] > file.txt et test_dir
+// [test_dir] > test_dir_file
 const DISK_IMAGE: &[u8] = include_bytes!("./test.img");
+
 //TODO Trouver une méthode plus optimisée pour charger le file system une seule fois
 fn init_fs() -> Rc<Mutex<Fat32FileSystem>> {
     let disk_box = alloc::vec::Vec::from(DISK_IMAGE).into_boxed_slice();
     let fs = Fat32FileSystem::new(disk_box);
 
     Rc::new(Mutex::new(fs))
+}
+
+#[test_case]
+fn touch_test() {
+    let fs = init_fs();
+    let mut shell = ShellSession::new(fs.clone());
+
+    shell.touch("", "FILE_T").expect("Erreur lors du touch");
+
+    let entries = shell.ls_entries();
+    assert_eq!(entries.len(), 3);
+    assert_eq!(entries[2].name, "FILE_T");
+    assert!(!entries[2].is_directory);
+
+    shell.cd("test_dir").unwrap();
+    shell.touch("test_dir", "FILE_T2").expect("Erreur lors du touch");
+
+    let entries = shell.ls_entries();
+
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[1].name, "FILE_T2");
+    assert!(!entries[1].is_directory);
+}
+
+#[test_case]
+fn mkdir_test() {
+    let fs = init_fs();
+    let mut shell = ShellSession::new(fs.clone());
+
+    shell.mkdir("", "DIR_T").expect("Erreur lors du mkdir");
+
+    let entries = shell.ls_entries();
+    assert_eq!(entries.len(), 3);
+    assert_eq!(entries[2].name, "DIR_T");
+    assert!(entries[2].is_directory);
+
+    shell.cd("test_dir").unwrap();
+    shell.mkdir("test_dir", "DIR_T2").expect("Erreur lors du mkdir");
+
+    let entries = shell.ls_entries();
+
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[1].name, "DIR_T2");
+    assert!(entries[1].is_directory);
 }
 
 #[test_case]
