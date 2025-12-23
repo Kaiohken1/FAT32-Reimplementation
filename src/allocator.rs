@@ -1,6 +1,7 @@
 pub mod bump;
 pub mod fixed_size_block;
 pub mod linked_list;
+pub mod slab;
 
 use x86_64::{
     VirtAddr,
