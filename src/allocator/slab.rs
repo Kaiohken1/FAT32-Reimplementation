@@ -1,29 +1,28 @@
-use core::mem::size_of;
 use bitmask_enum::bitmask;
+use core::{mem::size_of, ptr::null_mut, u32};
 
-//TODO Passer en liste circulaire
 struct ListNode {
-    size: usize,
-    pub next: Option<*mut ListNode>,
+    pub next: *mut ListNode,
 }
 
 impl ListNode {
-    const fn new(size: usize) -> Self {
-        ListNode { size, next: None }
+    pub const fn new() -> Self {
+        ListNode { next: null_mut() }
     }
 
-    fn start_addr(&self) -> usize {
-        self as *const Self as usize
-    }
-
-    fn end_addr(&self) -> usize {
-        self.start_addr() + self.size
+    unsafe fn init(&mut self) {
+        let self_ptr = self as *mut ListNode;
+        self.next = self_ptr;
     }
 }
 
 #[repr(transparent)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 struct BufCtl(u32);
+
+impl BufCtl {
+    pub const BUFCTL_END: BufCtl = BufCtl(u32::MAX);
+}
 
 #[repr(C)]
 struct Slab {
@@ -35,16 +34,18 @@ struct Slab {
 
 impl Slab {
     pub fn new(page_start: *mut u8) -> Slab {
-        let list = ListNode::new(0);
-        let s_mem = page_start;
-        let inuse = 0;
-        let free = BufCtl(0);
-        Slab {
-            list,
-            s_mem,
-            inuse,
-            free,
+        let mut slab = Slab {
+            list: ListNode::new(),
+            s_mem: page_start,
+            inuse: 0,
+            free: BufCtl(0),
+        };
+
+        unsafe {
+            slab.list.init();
         }
+
+        slab
     }
 }
 
@@ -79,9 +80,9 @@ struct Cache {
 }
 
 static mut KMEM_CACHE: Cache = Cache {
-    slabs_full: ListNode::new(0),
-    slabs_partial: ListNode::new(0),
-    slabs_free: ListNode::new(0),
+    slabs_full: ListNode::new(),
+    slabs_partial: ListNode::new(),
+    slabs_free: ListNode::new(),
     objsize: size_of::<Cache>(),
     num: 4096 / size_of::<Cache>(),
     gfporder: 0,
@@ -94,10 +95,10 @@ static mut KMEM_CACHE: Cache = Cache {
 
 impl Cache {
     pub fn new(name: &'static str, size: usize, flags: Flags) -> Cache {
-        Cache {
-            slabs_full: ListNode::new(0),
-            slabs_partial: ListNode::new(0),
-            slabs_free: ListNode::new(0),
+        let mut cache = Cache {
+            slabs_full: ListNode::new(),
+            slabs_partial: ListNode::new(),
+            slabs_free: ListNode::new(),
             objsize: size,
             num: 4096 / size,
             gfporder: 0,
@@ -106,30 +107,61 @@ impl Cache {
             name,
             next: None,
             prev: None,
+        };
+
+        unsafe {
+            cache.slabs_full.init();
+            cache.slabs_partial.init();
+            cache.slabs_free.init();
+
+            cache
         }
     }
-
 }
 
-unsafe fn kmem_cache_alloc_one(cache: *mut Cache, flag: Flags) {
+unsafe fn kmem_cache_alloc_one(cache: *mut Cache, flag: Flags) -> *mut u8 {
     unsafe {
         let slabs_partial = &mut (*cache).slabs_partial;
         let mut entry = slabs_partial.next;
 
-        if entry == Some(slabs_partial) {
+        if entry == slabs_partial {
             let slabs_free = &mut (*cache).slabs_free;
             entry = slabs_free.next;
 
-            if entry == Some(slabs_free) {
+            if entry == slabs_free {
                 alloc_new_slab();
+                entry = slabs_free.next;
             }
 
             list_del(entry);
             list_add(entry, slabs_partial)
         }
 
-        let slabp = list_entry(entry);
-        kmem_cache_alloc_one_tail(cache, slabp);
+        let slabp: *mut Slab = list_entry(entry);
+        kmem_cache_alloc_one_tail(cache, slabp)
+    }
+}
+
+unsafe fn kmem_cache_alloc_one_tail(cache: *mut Cache, slab: *mut Slab) -> *mut u8 {
+    unsafe {
+        let s = &mut *slab;
+
+        let obj_index = s.free;
+        s.inuse += 1;
+
+        let obj = s.s_mem.add(obj_index.0 as usize * (*cache).objsize);
+
+        let bufctl_array = (slab.add(1)) as *mut BufCtl;
+
+        let next_free = *bufctl_array.add(obj_index.0 as usize);
+        s.free = next_free;
+
+        if s.free == BufCtl::BUFCTL_END {
+            list_del(&mut s.list);
+            list_add(&mut s.list, &mut (*cache).slabs_full);
+        }
+
+        obj
     }
 }
 
@@ -137,19 +169,14 @@ fn alloc_new_slab() {
     todo!()
 }
 
-fn list_del(entry: Option<*mut ListNode>) {
+fn list_del(entry: *mut ListNode) {
     todo!()
 }
 
-fn list_add(entry: Option<*mut ListNode>, slabs: &mut ListNode) {
+fn list_add(entry: *mut ListNode, slabs: &mut ListNode) {
     todo!()
 }
 
-fn list_entry(entry: Option<*mut ListNode>) -> *mut Slab {
+fn list_entry(entry: *mut ListNode) -> *mut Slab {
     todo!()
 }
-
-fn kmem_cache_alloc_one_tail(cache: *mut Cache, slab: *mut Slab) {
-    todo!();
-}
-
