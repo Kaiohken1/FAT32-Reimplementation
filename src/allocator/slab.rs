@@ -1,5 +1,8 @@
 use bitmask_enum::bitmask;
 use core::{mem::size_of, ptr::null_mut, u32};
+use x86_64::VirtAddr;
+
+use crate::allocator::slab;
 
 struct ListNode {
     pub next: *mut ListNode,
@@ -13,6 +16,23 @@ impl ListNode {
     unsafe fn init(&mut self) {
         let self_ptr = self as *mut ListNode;
         self.next = self_ptr;
+    }
+}
+
+struct PageAllocator {
+    next: VirtAddr,
+    heap_end: VirtAddr,
+}
+
+impl PageAllocator {
+    fn allocate_page(&mut self) -> Option<VirtAddr> {
+        if self.next + 4096u64 > self.heap_end {
+            None
+        } else {
+            let page = self.next;
+            self.next += 4096u64;
+            Some(page)
+        }
     }
 }
 
@@ -33,10 +53,10 @@ struct Slab {
 }
 
 impl Slab {
-    pub fn new(page_start: *mut u8) -> Slab {
+    pub fn new(obj_start: *mut u8) -> Slab {
         let mut slab = Slab {
             list: ListNode::new(),
-            s_mem: page_start,
+            s_mem: obj_start,
             inuse: 0,
             free: BufCtl(0),
         };
@@ -119,7 +139,7 @@ impl Cache {
     }
 }
 
-unsafe fn kmem_cache_alloc_one(cache: *mut Cache, flag: Flags) -> *mut u8 {
+unsafe fn kmem_cache_alloc_one(cache: *mut Cache, flag: Flags, page_allocator: &mut PageAllocator) -> *mut u8 {
     unsafe {
         let slabs_partial = &mut (*cache).slabs_partial;
         let mut entry = slabs_partial.next;
@@ -129,7 +149,7 @@ unsafe fn kmem_cache_alloc_one(cache: *mut Cache, flag: Flags) -> *mut u8 {
             entry = slabs_free.next;
 
             if entry == slabs_free {
-                alloc_new_slab();
+                alloc_new_slab(page_allocator, &*cache);
                 entry = slabs_free.next;
             }
 
@@ -151,7 +171,7 @@ unsafe fn kmem_cache_alloc_one_tail(cache: *mut Cache, slab: *mut Slab) -> *mut 
 
         let obj = s.s_mem.add(obj_index.0 as usize * (*cache).objsize);
 
-        let bufctl_array = (slab.add(1)) as *mut BufCtl;
+        let bufctl_array = (slab as *mut u8).add(size_of::<Slab>()) as *mut BufCtl;
 
         let next_free = *bufctl_array.add(obj_index.0 as usize);
         s.free = next_free;
@@ -165,8 +185,37 @@ unsafe fn kmem_cache_alloc_one_tail(cache: *mut Cache, slab: *mut Slab) -> *mut 
     }
 }
 
-fn alloc_new_slab() {
-    todo!()
+fn init_bufctl(cache: &Cache, slab: *mut Slab) {
+    let num = cache.num;
+    let bufctl_array = unsafe { (slab as *mut u8).add(size_of::<Slab>()) as *mut BufCtl };
+    unsafe {
+        for i in 0..num {
+            let next = if i + 1 == num {
+                BufCtl::BUFCTL_END
+            } else {
+                BufCtl(i as u32 + 1)
+            };
+            bufctl_array.add(i).write(next);
+        }
+    }
+}
+
+unsafe fn alloc_new_slab(page_allocator: &mut PageAllocator, cache: &Cache) {
+    let page = page_allocator.allocate_page().expect("Error getting page");
+    let page_ptr = page.as_u64() as *mut u8;
+
+    let slab = page_ptr as *mut Slab;
+
+    let bufctl_size = cache.num * size_of::<usize>();
+    let obj_start = unsafe { page_ptr.add(size_of::<Slab>() + bufctl_size) };
+
+    unsafe {
+        core::ptr::write(slab, Slab::new(obj_start));
+    }
+
+    init_bufctl(cache, slab);
+
+    //TODO faire pointer le nouveau slabs dans le slabs_free du cache avec list_add
 }
 
 fn list_del(entry: *mut ListNode) {
