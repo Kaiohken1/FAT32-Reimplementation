@@ -1,21 +1,25 @@
 use bitmask_enum::bitmask;
 use core::{mem::size_of, ptr::null_mut, u32};
 use x86_64::VirtAddr;
+use core::mem::offset_of;
 
-use crate::allocator::slab;
-
+struct List {
+    head: ListNode,
+}
 struct ListNode {
-    pub next: *mut ListNode,
+    next: *mut ListNode,
+    prev: *mut ListNode,
 }
 
 impl ListNode {
     pub const fn new() -> Self {
-        ListNode { next: null_mut() }
+        ListNode { next: null_mut(), prev: null_mut() }
     }
 
     unsafe fn init(&mut self) {
         let self_ptr = self as *mut ListNode;
         self.next = self_ptr;
+        self.prev = self_ptr;
     }
 }
 
@@ -25,6 +29,13 @@ struct PageAllocator {
 }
 
 impl PageAllocator {
+    fn new(heap_start: VirtAddr, heap_end: VirtAddr) -> Self {
+        PageAllocator {
+            next: heap_start,
+            heap_end: heap_end,
+        }
+    }
+
     fn allocate_page(&mut self) -> Option<VirtAddr> {
         if self.next + 4096u64 > self.heap_end {
             None
@@ -149,7 +160,7 @@ unsafe fn kmem_cache_alloc_one(cache: *mut Cache, flag: Flags, page_allocator: &
             entry = slabs_free.next;
 
             if entry == slabs_free {
-                alloc_new_slab(page_allocator, &*cache);
+                alloc_new_slab(page_allocator, &mut *cache);
                 entry = slabs_free.next;
             }
 
@@ -200,7 +211,7 @@ fn init_bufctl(cache: &Cache, slab: *mut Slab) {
     }
 }
 
-unsafe fn alloc_new_slab(page_allocator: &mut PageAllocator, cache: &Cache) {
+unsafe fn alloc_new_slab(page_allocator: &mut PageAllocator, cache: &mut Cache) {
     let page = page_allocator.allocate_page().expect("Error getting page");
     let page_ptr = page.as_u64() as *mut u8;
 
@@ -215,17 +226,33 @@ unsafe fn alloc_new_slab(page_allocator: &mut PageAllocator, cache: &Cache) {
 
     init_bufctl(cache, slab);
 
-    //TODO faire pointer le nouveau slabs dans le slabs_free du cache avec list_add
+    unsafe {
+        list_add(&mut (*slab).list,&mut cache.slabs_free);
+    }
 }
 
-fn list_del(entry: *mut ListNode) {
-    todo!()
+unsafe fn list_del(entry: *mut ListNode) {
+    unsafe {
+        (*(*entry).prev).next = (*entry).next;
+        (*(*entry).next).prev = (*entry).prev;
+    }
+    
 }
 
-fn list_add(entry: *mut ListNode, slabs: &mut ListNode) {
-    todo!()
+unsafe fn list_add(entry: *mut ListNode, head: &mut ListNode) {
+    unsafe {
+        (*entry).next = (*head).next;
+        (*entry).prev = head;
+
+        (*(*head).next).prev = entry;
+        (*head).next = entry;
+    }
 }
 
-fn list_entry(entry: *mut ListNode) -> *mut Slab {
-    todo!()
+unsafe fn list_entry(entry: *mut ListNode) -> *mut Slab {
+    unsafe {
+        (entry as *mut u8)
+        .sub(offset_of!(Slab, list))
+        as *mut Slab
+    }
 }
