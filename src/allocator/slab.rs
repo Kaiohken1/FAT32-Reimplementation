@@ -1,3 +1,4 @@
+//! Implémentation d’un allocateur de type SLAB classique
 use crate::allocator::Locked;
 use alloc::alloc::Layout;
 use core::{
@@ -11,6 +12,7 @@ const PAGE_SIZE: usize = 4096;
 const MAX_SLAB_SIZE: usize = 2048;
 const MAX_CLASSES: usize = 9;
 
+/// Structure de liste circulaire doublement chaînée
 #[repr(C)]
 struct ListNode {
     next: *mut ListNode,
@@ -52,6 +54,7 @@ unsafe fn list_empty(head: *mut ListNode) -> bool {
     unsafe { (*head).next == head }
 }
 
+/// Tableau d'index du prochain objet libre pour utilisation
 #[repr(transparent)]
 #[derive(Copy, Clone, PartialEq)]
 struct BufCtl(u32);
@@ -59,35 +62,74 @@ impl BufCtl {
     const END: Self = BufCtl(u32::MAX);
 }
 
+/// Représentation du Slab
 #[repr(C)]
 struct Slab {
+    /// Liste chaînée du cache dans lequel appartient le slab
     list: ListNode,
+    
+    /// Addresse de départ du premier objet du slab
     s_mem: *mut u8,
+    
+    /// Index du prochain objet libre pour utilisation
     free: BufCtl,
+    
+    /// Nombre d'objets utilisés
     inuse: usize,
 }
 
+/// Rprésentation du Cache
 #[repr(C)]
 struct Cache {
+    /// Liste chaînée de slabs pleins
     slabs_full: ListNode,
+    
+    /// Liste chaînée de slabs partiellement remplis
     slabs_partial: ListNode,
+    
+    /// Liste chaînée de slabs vide
     slabs_free: ListNode,
+    
+    /// Taille de chaque objet contenus dans un slab
     obj_size: usize,
+
+    /// Nombre d'objets contenus dans un slab
     num: usize,
+
+    /// Nom du cache
     name: &'static str,
 }
 
+/// Représentation de l'allocateur Slab
 pub struct SlabAllocator {
+    /// Allocateur de page
     page_alloc: Option<PageAllocator>,
+
+    /// Tableau de caches générés par l'allocateur
     node_caches: [*mut Cache; MAX_CLASSES],
 }
 
+/// Représentation de l'allocateur de pages
 struct PageAllocator {
     next: VirtAddr,
     end: VirtAddr,
 }
 
+/// Liste des noms de caches selon la taille allouée
+const CACHE_NAMES: [&'static str; MAX_CLASSES] = [
+    "size-8",
+    "size-16",
+    "size-32",
+    "size-64",
+    "size-128",
+    "size-256",
+    "size-512",
+    "size-1024",
+    "size-2048",
+];
+
 impl SlabAllocator {
+    /// Création basique d'un alloacteur avec toutes ses paramètres non initialisés
     pub const fn new() -> Self {
         Self {
             page_alloc: None,
@@ -95,6 +137,8 @@ impl SlabAllocator {
         }
     }
 
+    /// Initialisation de l'allocateur de page de l'allocateur de slab
+    /// Cette fonction ne doit être appellée qu'une seule fois par démarrage
     pub unsafe fn init(&mut self, heap_start: usize, heap_size: usize) {
         self.page_alloc = Some(PageAllocator {
             next: VirtAddr::new(heap_start as u64),
@@ -102,8 +146,17 @@ impl SlabAllocator {
         });
     }
 
+    /// Cette fonction cherche pour une taille donnée s'il existe un cache existant
+    /// Ou bien le créé dans le cas contraire et l'ajoute à la liste de l'allocateur
     unsafe fn get_or_create_cache(&mut self, size: usize) -> *mut Cache {
         let idx = (size.trailing_zeros() as usize).saturating_sub(3);
+
+        let name = if idx < CACHE_NAMES.len() {
+            CACHE_NAMES[idx]
+        } else {
+            "size-large"
+        };
+
         if self.node_caches[idx].is_null() {
             let page = self
                 .page_alloc
@@ -125,7 +178,7 @@ impl SlabAllocator {
                         slabs_free: ListNode::new(),
                         obj_size,
                         num,
-                        name: "generic_cache",
+                        name,
                     },
                 );
 
@@ -139,6 +192,8 @@ impl SlabAllocator {
     }
 }
 
+/// Ajout d'un slab dans un cache
+/// Cette fonction alloue une page et y écrit le nouveau slab et son tableau bufctl
 unsafe fn cache_grow(page_alloc: &mut PageAllocator, cache: *mut Cache) {
     let page = page_alloc.alloc_pages(1).expect("OOM Slab");
     let slab_ptr = page.as_u64() as *mut Slab;
@@ -174,6 +229,7 @@ unsafe fn cache_grow(page_alloc: &mut PageAllocator, cache: *mut Cache) {
 }
 
 unsafe impl GlobalAlloc for Locked<SlabAllocator> {
+    /// Allocation d'un bloc de mémoire
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let mut allocator = self.lock();
         let size = layout.size();
