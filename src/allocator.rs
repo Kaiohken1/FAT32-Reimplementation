@@ -12,7 +12,8 @@ use x86_64::{
 // use linked_list_allocator::LockedHeap;
 // use bump::BumpAllocator;
 // use linked_list::LinkedListAllocator;
-use fixed_size_block::FixedSizeBlockAllocator;
+// use fixed_size_block::FixedSizeBlockAllocator;
+use slab::SlabAllocator;
 
 pub const HEAP_START: usize = 0x_4444_4444_0000;
 pub const HEAP_SIZE: usize = 40 * 1024 * 1024;
@@ -70,7 +71,10 @@ pub fn init_heap(
 }
 
 #[global_allocator]
-static ALLOCATOR: Locked<FixedSizeBlockAllocator> = Locked::new(FixedSizeBlockAllocator::new());
+static ALLOCATOR: Locked<SlabAllocator> = Locked::new(SlabAllocator::new());
+
+// #[global_allocator]
+// static ALLOCATOR: Locked<FixedSizeBlockAllocator> = Locked::new(FixedSizeBlockAllocator::new());
 
 // #[global_allocator]
 // static ALLOCATOR: Locked<LinkedListAllocator> =

@@ -10,8 +10,8 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
-use fat32_impl::allocator::HEAP_SIZE;
 
+static HEAP_SIZE: usize = 100 * 1024;
 entry_point!(main);
 
 #[test_case]
