@@ -15,17 +15,25 @@ const MAX_CLASSES: usize = 9;
 /// Structure de liste circulaire doublement chaînée
 #[repr(C)]
 struct ListNode {
+    /// Pointeur vers l'élément précédent de la liste
     next: *mut ListNode,
+
+    /// Pointeur vers l'élément suivant de la liste
     prev: *mut ListNode,
 }
 
 impl ListNode {
+    /// Création de la liste avec des pointeur nuls
     const fn new() -> Self {
         Self {
             next: null_mut(),
             prev: null_mut(),
         }
     }
+/// Initialise un noeud comme liste chaînée circulaire vide.
+/// 
+/// # Safety
+/// `node` doit être un pointeur valide et correctement aligné vers un `ListNode` initialisé.
     unsafe fn init(node: *mut ListNode) {
         unsafe {
             (*node).next = node;
@@ -34,6 +42,10 @@ impl ListNode {
     }
 }
 
+/// Ajout d'un élement depuis la queue de la liste
+/// 
+/// # Safety
+/// `entry` et `head` doivent être des pointeurs valides et correctement aligné vers un `ListNode` initialisé.
 unsafe fn list_add(entry: *mut ListNode, head: *mut ListNode) {
     unsafe {
         (*entry).next = (*head).next;
@@ -43,6 +55,9 @@ unsafe fn list_add(entry: *mut ListNode, head: *mut ListNode) {
     }
 }
 
+/// Suppression d'un élement de la liste
+/// # Safety
+/// `entry` doit être un pointeur valide et correctement aligné vers un `ListNode` initialisé.
 unsafe fn list_del(entry: *mut ListNode) {
     unsafe {
         (*(*entry).prev).next = (*entry).next;
@@ -50,6 +65,10 @@ unsafe fn list_del(entry: *mut ListNode) {
     }
 }
 
+/// Vérifie si une liste est vide ou non
+/// 
+/// # Safety
+/// `head` doit être un pointeur valide et correctement aligné vers un `ListNode` initialisé.
 unsafe fn list_empty(head: *mut ListNode) -> bool {
     unsafe { (*head).next == head }
 }
@@ -137,8 +156,13 @@ impl SlabAllocator {
         }
     }
 
-    /// Initialisation de l'allocateur de page de l'allocateur de slab
+    /// Initialisation de l'allocateur de page de l'allocateur de slab. 
     /// Cette fonction ne doit être appellée qu'une seule fois par démarrage
+    /// 
+    /// # Safety
+    /// - `heap_start` doit être aligné sur la taille de page.
+    /// - `heap_size` doit être un multiple de la taille de page.
+    /// - La plage de la heap doit être valide, correctement initialisée, et exclusivement utilisée par cet allocateur.
     pub unsafe fn init(&mut self, heap_start: usize, heap_size: usize) {
         self.page_alloc = Some(PageAllocator {
             next: VirtAddr::new(heap_start as u64),
@@ -146,10 +170,17 @@ impl SlabAllocator {
         });
     }
 
-    /// Cette fonction cherche pour une taille donnée s'il existe un cache existant
-    /// Ou bien le créé dans le cas contraire et l'ajoute à la liste de l'allocateur
+    /// Recherche ou crée un cache pour une taille d’objet donnée.
+    ///
+    /// # Safety
+    /// - `self.page_alloc` doit être initialisé.
+    /// - La plage mémoire retournée par `alloc_pages(1)` doit être valide et correctement alignée pour `Cache`.
+    /// - `self.node_caches` doit avoir une taille suffisante pour l’index calculé à partir de `size`.
+    /// - `size` doit être > 0.
     unsafe fn get_or_create_cache(&mut self, size: usize) -> *mut Cache {
         let idx = (size.trailing_zeros() as usize).saturating_sub(3);
+
+        assert!(size > 0);
 
         let name = if idx < CACHE_NAMES.len() {
             CACHE_NAMES[idx]
@@ -194,6 +225,12 @@ impl SlabAllocator {
 
 /// Ajout d'un slab dans un cache
 /// Cette fonction alloue une page et y écrit le nouveau slab et son tableau bufctl
+/// 
+/// # Safety
+/// - `self.page_alloc` doit être initialisé.
+/// - La page retournée doit être correctement alignée pour `Slab` et `BufCtl`.
+/// - `cache` doit être un pointeur valide vers un `Cache` initialisé.
+/// - `cache.num` et `cache.obj_size` doivent être cohérents avec la taille de page.
 unsafe fn cache_grow(page_alloc: &mut PageAllocator, cache: *mut Cache) {
     let page = page_alloc.alloc_pages(1).expect("OOM Slab");
     let slab_ptr = page.as_u64() as *mut Slab;
@@ -230,6 +267,10 @@ unsafe fn cache_grow(page_alloc: &mut PageAllocator, cache: *mut Cache) {
 
 unsafe impl GlobalAlloc for Locked<SlabAllocator> {
     /// Allocation d'un bloc de mémoire
+    ///
+    /// # Safety
+    /// - L'allocateur doit être correctement initialisé avant tout appel.
+    /// - Les appels concurrents doivent être protégés par le verrou `Locked`.
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let mut allocator = self.lock();
         let size = layout.size();
@@ -276,6 +317,11 @@ unsafe impl GlobalAlloc for Locked<SlabAllocator> {
         }
     }
 
+    /// Libère un bloc précédemment alloué par cet allocateur.
+    ///
+    /// # Safety
+    /// - `ptr` doit provenir d’un appel à `alloc` de cet allocateur.
+    /// - `layout` doit correspondre exactement à celui utilisé lors de l’allocation.
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         let mut allocator = self.lock();
         let size = layout.size();
